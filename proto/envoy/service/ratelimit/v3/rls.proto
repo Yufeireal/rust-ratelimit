@@ -1,0 +1,120 @@
+syntax = "proto3";
+
+package envoy.service.ratelimit.v3;
+
+import "envoy/config/core/v3/base.proto";
+import "google/protobuf/duration.proto";
+
+// The rate limit service used to perform rate limit queries.
+service RateLimitService {
+  // Determine whether rate limiting should take place.
+  rpc ShouldRateLimit(RateLimitRequest) returns (RateLimitResponse);
+}
+
+// Main message for a rate limit request. The rate limit service is designed to be fully generic
+// in the sense that it can operate on arbitrary hierarchical key/value pairs.
+// The loaded configuration will parse the request and find the appropriate rate limit to apply
+// (if any) with the appropriate keys.
+message RateLimitRequest {
+  // The rate limit domain to use.
+  string domain = 1;
+
+  // All rate limit descriptors to query.
+  repeated RateLimitDescriptor descriptors = 2;
+
+  // Rate limit requests can optionally specify the number of hits a request adds to
+  // the matched limit. If the value is not set, a default value of 1 is used.
+  uint32 hits_addend = 3;
+}
+
+// A rate limit descriptor is a list of hierarchical entries that are used by the service to
+// select the correct rate limit to use when limiting. Here are some examples of how they might
+// be used:
+//
+// .. code-block:: cpp
+//
+//   ["connection", "ip"]
+//   ["connection", "ip", "10.0.0.1"]
+//   ["connection", "ip", "10.0.0.1", "user_agent", "foo"]
+//   ["connection", "ip", "10.0.0.1", "user_agent", "foo", "to", "www.example.com"]
+//
+// The idea is that each descriptor entry is an additional constraint on top of the previous one.
+// A suffix of a descriptor might be rate limited even if the entire descriptor is not.
+// Clients can query as many descriptors as they want in a single request.
+message RateLimitDescriptor {
+  // Descriptor entries.
+  repeated RateLimitDescriptorEntry entries = 1;
+}
+
+// Rate limit descriptor entry.
+message RateLimitDescriptorEntry {
+  // Descriptor key.
+  string key = 1;
+
+  // Descriptor value.
+  string value = 2;
+}
+
+// A response from a ShouldRateLimit call.
+message RateLimitResponse {
+  // The overall response code which takes into account all of the descriptors that were
+  // passed in the request.
+  enum Code {
+    // The response code is not known.
+    UNKNOWN = 0;
+    // The response code to notify that the number of requests are under limit.
+    OK = 1;
+    // The response code to notify that the number of requests are over limit.
+    OVER_LIMIT = 2;
+  }
+
+  // Defines an actual rate limit in terms of requests per unit of time and the unit itself.
+  message RateLimit {
+    enum Unit {
+      // The time unit is not known.
+      UNKNOWN = 0;
+      // The time unit representing a second.
+      SECOND = 1;
+      // The time unit representing a minute.
+      MINUTE = 2;
+      // The time unit representing an hour.
+      HOUR = 3;
+      // The time unit representing a day.
+      DAY = 4;
+    }
+
+    // The number of requests per unit of time.
+    uint32 requests_per_unit = 1;
+    // The unit of time.
+    Unit unit = 2;
+  }
+
+  message DescriptorStatus {
+    // The response code for an individual descriptor.
+    Code code = 1;
+
+    // The current limit as configured by the server. Useful for debugging, etc.
+    RateLimit current_limit = 2;
+
+    // The limit remaining in the current time window.
+    uint32 limit_remaining = 3;
+
+    // The duration until the rate limit window resets.
+    google.protobuf.Duration duration_until_reset = 4;
+  }
+
+  // The overall response code which takes into account all of the descriptors that were passed
+  // in the request.
+  Code overall_code = 1;
+
+  // A list of DescriptorStatus messages which matches the length of the descriptor list passed
+  // in the RateLimitRequest. This can be used by the caller to determine which individual
+  // descriptors failed and/or what the currently configured limits are for all of them.
+  repeated DescriptorStatus statuses = 2;
+
+  // A list of headers to add to the response
+  repeated envoy.config.core.v3.HeaderValue response_headers_to_add = 3;
+
+  // A list of headers to add to the request when forwarded
+  repeated envoy.config.core.v3.HeaderValue request_headers_to_add = 4;
+}

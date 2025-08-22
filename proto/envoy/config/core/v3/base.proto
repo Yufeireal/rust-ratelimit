@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package envoy.config.core.v3;
+
+// Header name/value pair.
+message HeaderValue {
+  // Header name.
+  string key = 1;
+
+  // Header value.
+  //
+  // The same :ref:`format specifier <config_access_log_format>` as used for
+  // :ref:`HTTP access logging <config_access_log>` applies here, however
+  // unknown header values are replaced with the empty string instead of ``-``.
+  string value = 2;
+
+  // If specified, the header value is only set if the header is not already set.
+  // For responses, this field has no effect if header is not already set.
+  bool append = 3;
+}

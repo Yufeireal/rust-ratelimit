@@ -1,0 +1,99 @@
+syntax = "proto3";
+
+package envoy.service.ratelimit.v3;
+
+import "google/protobuf/duration.proto";
+
+// The rate limit service is used to make rate limit decisions based on
+// descriptors and a domain.
+service RateLimitService {
+  // Determine whether rate limiting should take place.
+  rpc ShouldRateLimit(RateLimitRequest) returns (RateLimitResponse);
+}
+
+// Rate limit request message.
+message RateLimitRequest {
+  // The rate limit domain to use.
+  string domain = 1;
+
+  // All rate limit descriptors to check.
+  repeated RateLimitDescriptor descriptors = 2;
+
+  // Rate limit requests can optionally specify the number of hits a request adds to
+  // the matched limit. If the value is not set, a default value of 1 is used.
+  uint32 hits_addend = 3;
+}
+
+// A rate limit descriptor entry.
+message RateLimitDescriptorEntry {
+  // Descriptor key.
+  string key = 1;
+
+  // Descriptor value.
+  string value = 2;
+}
+
+// A rate limit descriptor.
+message RateLimitDescriptor {
+  // Descriptor entries.
+  repeated RateLimitDescriptorEntry entries = 1;
+}
+
+// Rate limit response message.
+message RateLimitResponse {
+  // The overall response code which takes into account all of the descriptors that were
+  // passed in the request.
+  enum Code {
+    // The response code is not known.
+    UNKNOWN = 0;
+    // The response code to notify that the number of requests are under limit.
+    OK = 1;
+    // The response code to notify that the number of requests are over limit.
+    OVER_LIMIT = 2;
+  }
+
+  // Rate limit status information for each descriptor.
+  message DescriptorStatus {
+    // The response code for an individual descriptor.
+    Code code = 1;
+
+    // The current limit as configured by the server. Useful for debugging, etc.
+    RateLimit current_limit = 2;
+
+    // The limit remaining in the current time window.
+    uint32 limit_remaining = 3;
+
+    // The duration until the rate limit window resets.
+    google.protobuf.Duration duration_until_reset = 4;
+  }
+
+  // Rate limit information for a single limit.
+  message RateLimit {
+    enum Unit {
+      // The time unit is not known.
+      UNKNOWN = 0;
+      // The time unit is second.
+      SECOND = 1;
+      // The time unit is minute.
+      MINUTE = 2;
+      // The time unit is hour.
+      HOUR = 3;
+      // The time unit is day.
+      DAY = 4;
+    }
+
+    // The number of requests per unit of time.
+    uint32 requests_per_unit = 1;
+
+    // The unit of time.
+    Unit unit = 2;
+  }
+
+  // The overall response code which takes into account all of the descriptors that were passed
+  // in the request.
+  Code overall_code = 1;
+
+  // A list of DescriptorStatus messages which matches the length of the descriptor list passed
+  // in the RateLimitRequest.
+  repeated DescriptorStatus statuses = 2;
+}

@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # Optional: separate Redis instance for per-second limits
+  redis-persecond:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    command: redis-server --appendonly yes --port 6379
+    volumes:
+      - redis_persecond_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  ratelimit:
+    build: .
+    ports:
+      - "8080:8080"  # HTTP (health checks, metrics)
+      - "8081:8081"  # gRPC (rate limit service)
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - REDIS_PERSECOND_URL=redis://redis-persecond:6379
+      - HTTP_PORT=0.0.0.0:8080
+      - GRPC_PORT=0.0.0.0:8081
+      - CONFIG_PATH=/config/example.yaml
+      - LOCAL_CACHE_SIZE=1000
+      - NEAR_LIMIT_RATIO=0.8
+      - CACHE_KEY_PREFIX=ratelimit
+      - RUST_LOG=rust_ratelimit=debug
+    volumes:
+      - ./config:/config:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      redis-persecond:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+
+  # Optional: Grafana for metrics visualization
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+
+volumes:
+  redis_data:
+  redis_persecond_data:
+  prometheus_data:
+  grafana_data:

@@ -1,0 +1,60 @@
+# Example rate limit configuration
+domain: example_service
+
+descriptors:
+  # Database rate limits
+  - key: database
+    value: users
+    rate_limit:
+      requests_per_unit: 500
+      unit: second
+      
+  - key: database
+    value: admin
+    rate_limit:
+      requests_per_unit: 1000
+      unit: second
+
+  # API rate limits with nested descriptors
+  - key: api
+    value: public
+    descriptors:
+      - key: endpoint
+        value: search
+        rate_limit:
+          requests_per_unit: 100
+          unit: minute
+      - key: endpoint
+        value: upload
+        rate_limit:
+          requests_per_unit: 10
+          unit: minute
+          
+  # Marketing messages with nested limits
+  - key: message_type
+    value: marketing
+    descriptors:
+      - key: to_number
+        rate_limit:
+          requests_per_unit: 5
+          unit: day
+
+  # Per-number limits (fallback)
+  - key: to_number
+    rate_limit:
+      requests_per_unit: 100
+      unit: day
+
+  # Shadow mode example (for testing)
+  - key: user
+    value: test_user
+    rate_limit:
+      requests_per_unit: 10
+      unit: second
+    shadow_mode: true
+
+  # Unlimited example
+  - key: service
+    value: health_check
+    rate_limit:
+      unlimited: true

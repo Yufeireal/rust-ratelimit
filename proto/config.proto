@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package ratelimit.config.v3;
+
+// Configuration for rate limits.
+message RateLimitConfig {
+  // The name of the rate limit configuration.
+  string name = 1;
+
+  // The domain for the rate limit configuration.
+  string domain = 2;
+
+  // The descriptors for the rate limit configuration.
+  repeated RateLimitDescriptor descriptors = 3;
+}
+
+// A rate limit descriptor.
+message RateLimitDescriptor {
+  // The key of the descriptor.
+  string key = 1;
+
+  // The value of the descriptor (optional).
+  string value = 2;
+
+  // The rate limit to apply.
+  RateLimit rate_limit = 3;
+
+  // Whether this descriptor is in shadow mode.
+  bool shadow_mode = 4;
+
+  // Nested descriptors.
+  repeated RateLimitDescriptor descriptors = 5;
+}
+
+// Rate limit configuration.
+message RateLimit {
+  // The unit of time for the rate limit.
+  enum Unit {
+    UNKNOWN = 0;
+    SECOND = 1;
+    MINUTE = 2;
+    HOUR = 3;
+    DAY = 4;
+  }
+
+  // The number of requests per unit.
+  uint32 requests_per_unit = 1;
+
+  // The unit of time.
+  Unit unit = 2;
+
+  // Whether this is an unlimited rate limit.
+  bool unlimited = 3;
+}

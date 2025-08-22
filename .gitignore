@@ -1,0 +1,90 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# Cargo lock file (uncomment if this is a binary crate)
+# Cargo.lock
+
+# Generated protobuf files (they get regenerated on build)
+src/proto/generated/*.rs
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# Test results
+test-results/
+coverage.xml
+
+# Docker
+.dockerignore
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Editor backup files
+*.bak
+*.orig
+
+# Local configuration files that might contain secrets
+config/local.*
+*.local.yaml
+*.local.yml
+*.local.json
+
+# Redis dump files
+dump.rdb
+
+# Profiling output
+*.prof
+*.cpu
+*.mem
+
+# Benchmark results
+bench_*.txt
+
+# Generated documentation
+/doc/
+/docs/site/
