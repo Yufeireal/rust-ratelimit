@@ -1,14 +1,29 @@
-# Build stage
-FROM rust:1.75 as builder
+# Use a multi-stage build for better efficiency
+FROM --platform=$BUILDPLATFORM rust:1.75-slim as builder
 
-WORKDIR /usr/src/app
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy manifests
+# Set working directory
+WORKDIR /app
+
+# Copy Cargo files for dependency caching
 COPY Cargo.toml Cargo.lock ./
+COPY build.rs ./
 
-# Copy source code
-COPY src ./src
-COPY tests ./tests
+# Create a dummy main.rs to build dependencies
+RUN mkdir src && echo "fn main() {}" > src/main.rs
+
+# Build dependencies (this layer will be cached if Cargo files don't change)
+RUN cargo build --release
+
+# Remove dummy main.rs and copy actual source code
+RUN rm src/main.rs
+COPY src/ ./src/
+COPY proto/ ./proto/
 
 # Build the application
 RUN cargo build --release
@@ -17,38 +32,35 @@ RUN cargo build --release
 FROM debian:bookworm-slim
 
 # Install runtime dependencies
-RUN apt-get update && \
-    apt-get install -y ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# Create application user
-RUN useradd -m -u 1000 ratelimit
+# Create non-root user
+RUN useradd -r -s /bin/false appuser
+
+# Set working directory
+WORKDIR /app
 
 # Copy the binary from builder stage
-COPY --from=builder /usr/src/app/target/release/rust-ratelimit /usr/local/bin/rust-ratelimit
+COPY --from=builder /app/target/release/rust-ratelimit /app/rust-ratelimit
 
-# Create config directory
-RUN mkdir -p /config && chown ratelimit:ratelimit /config
+# Copy configuration files if needed
+COPY config/ ./config/
 
-# Copy example configuration
-COPY config/example.yaml /config/
+# Change ownership to non-root user
+RUN chown -R appuser:appuser /app
 
 # Switch to non-root user
-USER ratelimit
+USER appuser
 
-# Expose ports
-EXPOSE 8080 8081
-
-# Environment variables with defaults
-ENV HTTP_PORT=0.0.0.0:8080
-ENV GRPC_PORT=0.0.0.0:8081
-ENV REDIS_URL=redis://redis:6379
-ENV CONFIG_PATH=/config/example.yaml
-ENV RUST_LOG=rust_ratelimit=info
+# Expose the port your service runs on
+EXPOSE 50051
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/healthcheck || exit 1
+    CMD curl -f http://localhost:50051/health || exit 1
 
 # Run the application
-CMD ["rust-ratelimit"]
+CMD ["./rust-ratelimit"]
