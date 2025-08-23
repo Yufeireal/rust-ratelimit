@@ -1,10 +1,11 @@
 # Use a multi-stage build for better efficiency
-FROM --platform=$BUILDPLATFORM rust:1.75-slim as builder
+FROM --platform=$BUILDPLATFORM rust:1.82-slim as builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
+    protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -13,6 +14,7 @@ WORKDIR /app
 # Copy Cargo files for dependency caching
 COPY Cargo.toml Cargo.lock ./
 COPY build.rs ./
+COPY proto/ ./proto/
 
 # Create a dummy main.rs to build dependencies
 RUN mkdir src && echo "fn main() {}" > src/main.rs
@@ -23,7 +25,6 @@ RUN cargo build --release
 # Remove dummy main.rs and copy actual source code
 RUN rm src/main.rs
 COPY src/ ./src/
-COPY proto/ ./proto/
 
 # Build the application
 RUN cargo build --release

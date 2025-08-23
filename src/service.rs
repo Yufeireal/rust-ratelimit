@@ -4,7 +4,7 @@ use tokio::sync::RwLock;
 use crate::{
     cache::{RateLimitDescriptor, RateLimitRequest, ResponseCode},
     config::CompiledRateLimitConfig,
-    limiter::RateLimiter,
+    limiter::{RateLimiter, RateLimitResponse},
     metrics::Metrics,
 };
 
@@ -96,7 +96,7 @@ impl RateLimitService {
     }
 
     /// Convert internal response to gRPC response
-    fn convert_response(response: crate::limiter::RateLimitResponse) -> GrpcRateLimitResponse {
+    fn convert_response(response: RateLimitResponse) -> GrpcRateLimitResponse {
         let overall_code = Self::convert_response_code(response.overall_code);
         
         let statuses = response

@@ -4,10 +4,10 @@
 set -e
 
 # Configuration
-ECR_REPOSITORY="AWS_ECR"
-IMAGE_NAME="rust-ratelimit"
-IMAGE_TAG="latest"
-REGION="us-east-1"  # Change this to your AWS region
+ECR_REPOSITORY="xxx"
+IMAGE_NAME="fortio"
+IMAGE_TAG="ratelimit-test"
+REGION="us-west-2"  # Change this to your AWS region
 
 # Colors for output
 RED='\033[0;31m'

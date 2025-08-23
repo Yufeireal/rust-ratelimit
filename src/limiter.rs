@@ -10,7 +10,7 @@ pub struct RateLimiter {
     configurations: HashMap<String, CompiledRateLimitConfig>,
     cache: Box<dyn RateLimitCache>,
 }
-s
+
 impl RateLimiter {
     /// Create a new rate limiter with the given cache implementation
     pub fn new(cache: Box<dyn RateLimitCache>) -> Self {
