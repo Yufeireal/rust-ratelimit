@@ -1,11 +1,12 @@
 use async_trait::async_trait;
 use lru::LruCache;
-use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
+use moka::{future::Cache, Expiry};
+use std::{collections::HashMap, num::NonZeroUsize, sync::Arc, time::{Duration, Instant}};
 use tokio::sync::Mutex;
 
 use crate::{
-    config::CompiledRateLimit,
-    error::{Result, RateLimitError},
+    config::{CompiledRateLimit},
+    error::{RateLimitError, Result},
     redis::RedisClientPool,
     utils::{generate_cache_key, get_hits_addend, TimeSource, Unit},
 };
@@ -60,25 +61,65 @@ pub trait RateLimitCache: Send + Sync {
 /// Redis-based rate limit cache implementation
 pub struct RedisRateLimitCache {
     redis_pool: RedisClientPool,
-    local_cache: Arc<Mutex<LruCache<String, ()>>>,
+    local_cache: Arc<Cache<String, (Expiration, String)>>,
     time_source: TimeSource,
     near_limit_ratio: f32,
     cache_key_prefix: String,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Expiration {
+    // The value will pass after 
+    Duration(Unit),     
+}
+
+impl Expiration {
+    pub fn as_duration(&self) -> Option<Duration> {
+        match self {
+            Expiration::Duration(unit) => {
+                let seconds = match unit {
+                    Unit::Second => 1,
+                    Unit::Minute => 60,
+                    Unit::Hour =>  3600,
+                    Unit::Day => 86400,
+                };
+                Some(Duration::from_secs(seconds))
+            }
+        }
+    }
+}
+
+pub struct MyExpiry;
+
+impl Expiry<String, (Expiration, String)> for MyExpiry {
+    fn expire_after_create(
+        &self,
+        _key: &String,
+        value: &(Expiration, String),
+        _current_time: Instant,
+    ) -> Option<Duration> {
+        let duration = value.0.as_duration();
+        duration
+    }
+}
+
+
 impl RedisRateLimitCache {
     /// Create a new Redis-based rate limit cache
     pub fn new(
         redis_pool: RedisClientPool,
-        local_cache_size: usize,
+        local_cache_size: u64,
         near_limit_ratio: f32,
         cache_key_prefix: String,
     ) -> Self {
-        let local_cache_size = NonZeroUsize::new(local_cache_size).unwrap_or(NonZeroUsize::new(1000).unwrap());
-        
+        let local_cache = Cache::builder()
+            .max_capacity(local_cache_size)
+            .expire_after(MyExpiry)
+            .build();
+
         Self {
             redis_pool,
-            local_cache: Arc::new(Mutex::new(LruCache::new(local_cache_size))),
+            local_cache: Arc::new(local_cache),
             time_source: TimeSource::new(),
             near_limit_ratio,
             cache_key_prefix,
@@ -123,14 +164,12 @@ impl RedisRateLimitCache {
 
     /// Check if a key is over limit in local cache
     async fn is_over_limit_with_local_cache(&self, key: &str) -> bool {
-        let cache = self.local_cache.lock().await;
-        cache.peek(key).is_some()
+        self.local_cache.get(key).await.is_some()
     }
 
     /// Add a key to the local cache as over-limit
-    async fn add_to_local_cache(&self, key: &str) {
-        let mut cache = self.local_cache.lock().await;
-        cache.put(key.to_string(), ());
+    async fn add_to_local_cache(&self, key: &str, unit: &Unit) {
+        self.local_cache.insert(key.into(), (Expiration::Duration(unit.clone()), "".into())).await
     }
 
     /// Generate response descriptor status
@@ -263,7 +302,7 @@ impl RateLimitCache for RedisRateLimitCache {
                     if is_over_limit && !limit.shadow_mode {
                         // Add to local cache for future requests
                         if let Some(key) = cache_key {
-                            self.add_to_local_cache(&key.key).await;
+                            self.add_to_local_cache(&key.key, &limit.unit).await;
                         }
                         
                         self.generate_response_descriptor_status(ResponseCode::OverLimit, Some(limit), 0)
@@ -337,10 +376,8 @@ mod tests {
             shadow_mode: false,
             name: None,
         };
-
         let limits = vec![Some(&limit)];
         let cache_keys = cache.generate_cache_keys(&request, &limits);
-
         assert_eq!(cache_keys.len(), 1);
         assert!(cache_keys[0].is_some());
         let cache_key = cache_keys[0].as_ref().unwrap();

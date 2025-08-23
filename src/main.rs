@@ -107,9 +107,9 @@ async fn create_service(metrics: Arc<Metrics>) -> Result<Arc<RateLimitService>> 
 
     // Create cache
     let local_cache_size = std::env::var("LOCAL_CACHE_SIZE")
-        .unwrap_or_else(|_| "1000".to_string())
-        .parse::<usize>()
-        .unwrap_or(1000);
+        .unwrap_or_else(|_| (128 * 1024 * 1024).to_string())
+        .parse::<u64>()
+        .unwrap_or(128 * 1024 * 1024u64);
 
     let near_limit_ratio = std::env::var("NEAR_LIMIT_RATIO")
         .unwrap_or_else(|_| "0.8".to_string())
@@ -209,41 +209,23 @@ impl rust_ratelimit::proto::RateLimitService for RateLimitServiceImpl {
             Ok(response) => {
                 // Convert internal response to protobuf response
                 let grpc_response = RateLimitResponse {
-                    overall_code: match response.overall_code {
-                        rust_ratelimit::cache::ResponseCode::Ok => 
-                            rust_ratelimit::proto::ResponseCode::Ok as i32,
-                        rust_ratelimit::cache::ResponseCode::OverLimit => 
-                            rust_ratelimit::proto::ResponseCode::OverLimit as i32,
-                    },
-                    statuses: response.statuses.into_iter().map(|status| {
+                    overall_code: response.overall_code,
+                    statuses: response.statuses.iter().map(|status| {
                         rust_ratelimit::proto::DescriptorStatus {
-                            code: match status.code {
-                                rust_ratelimit::cache::ResponseCode::Ok => 
-                                    rust_ratelimit::proto::ResponseCode::Ok as i32,
-                                rust_ratelimit::cache::ResponseCode::OverLimit => 
-                                    rust_ratelimit::proto::ResponseCode::OverLimit as i32,
-                            },
-                            current_limit: status.current_limit.map(|limit| {
+                            code: status.code,
+                            current_limit: status.current_limit.as_ref().map(|limit| {
                                 rust_ratelimit::proto::RateLimit {
                                     requests_per_unit: limit.requests_per_unit,
-                                    unit: match limit.unit {
-                                        rust_ratelimit::utils::Unit::Second => 
-                                            rust_ratelimit::proto::rate_limit_response::rate_limit::Unit::Second as i32,
-                                        rust_ratelimit::utils::Unit::Minute => 
-                                            rust_ratelimit::proto::rate_limit_response::rate_limit::Unit::Minute as i32,
-                                        rust_ratelimit::utils::Unit::Hour => 
-                                            rust_ratelimit::proto::rate_limit_response::rate_limit::Unit::Hour as i32,
-                                        rust_ratelimit::utils::Unit::Day => 
-                                            rust_ratelimit::proto::rate_limit_response::rate_limit::Unit::Day as i32,
-                                    },
+                                    unit: limit.unit,
                                 }
                             }),
                             limit_remaining: status.limit_remaining,
-                            duration_until_reset_secs: status.duration_until_reset_secs,
+                            duration_until_reset: Some(prost_types::Duration {
+                                seconds: status.duration_until_reset_secs as i64,
+                                nanos: 0,
+                            }),
                         }
                     }).collect(),
-                    response_headers_to_add: vec![],
-                    request_headers_to_add: vec![],
                 };
                 
                 Ok(tonic::Response::new(grpc_response))
