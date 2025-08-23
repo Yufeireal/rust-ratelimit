@@ -4,7 +4,7 @@
 set -e
 
 # Configuration
-ECR_REPOSITORY="505834710180.dkr.ecr.us-west-2.amazonaws.com/verkada"
+ECR_REPOSITORY="xxx"
 IMAGE_NAME="fortio"
 IMAGE_TAG="ratelimit-test"
 REGION="us-west-2"  # Change this to your AWS region
