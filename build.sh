@@ -4,9 +4,9 @@
 set -e
 
 # Configuration
-ECR_REPOSITORY="xxx"
-IMAGE_NAME="fortio"
-IMAGE_TAG="ratelimit-test"
+ECR_REPOSITORY="xxx.dkr.ecr.us-west-2.amazonaws.com/verkada/rust-ratelimit"
+IMAGE_NAME="rust-ratelimit"
+IMAGE_TAG="latest"
 REGION="us-west-2"  # Change this to your AWS region
 
 # Colors for output
