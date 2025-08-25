@@ -4,11 +4,11 @@
 set -e
 
 # Configuration
-AWS_ACCOUNT_ID="xxx"
+AWS_ACCOUNT_ID="505834710180"
 ECR_REPOSITORY="${AWS_ACCOUNT_ID}.dkr.ecr.us-west-2.amazonaws.com/verkada/rust-ratelimit"
 IMAGE_NAME="rust-ratelimit"
 IMAGE_TAG="latest"
-REGION="us-west-2"  # Change this to your AWS region
+REGION="us-west-2"
 
 # Colors for output
 RED='\033[0;31m'
@@ -44,12 +44,6 @@ check_prerequisites() {
         exit 1
     fi
     
-    # Check if Docker Buildx is available
-    if ! docker buildx version > /dev/null 2>&1; then
-        log_error "Docker Buildx is not available. Please install Docker Buildx."
-        exit 1
-    fi
-    
     # Check if AWS CLI is installed
     if ! command -v aws &> /dev/null; then
         log_error "AWS CLI is not installed. Please install AWS CLI."
@@ -65,26 +59,6 @@ check_prerequisites() {
     log_success "All prerequisites are met!"
 }
 
-# Create and use a new builder instance for multi-arch builds
-setup_builder() {
-    log_info "Setting up Docker Buildx builder for multi-architecture builds..."
-    
-    # Create a new builder instance if it doesn't exist
-    if ! docker buildx inspect multiarch-builder > /dev/null 2>&1; then
-        log_info "Creating new builder instance: multiarch-builder"
-        docker buildx create --name multiarch-builder --driver docker-container --use
-    else
-        log_info "Using existing builder instance: multiarch-builder"
-        docker buildx use multiarch-builder
-    fi
-    
-    # Bootstrap the builder
-    log_info "Bootstrapping builder instance..."
-    docker buildx inspect --bootstrap
-    
-    log_success "Builder setup complete!"
-}
-
 # Login to ECR
 login_to_ecr() {
     log_info "Logging in to Amazon ECR..."
@@ -95,36 +69,33 @@ login_to_ecr() {
     log_success "Successfully logged in to ECR!"
 }
 
-# Build and push multi-architecture image
+# Build and push AMD64 image only
 build_and_push() {
-    log_info "Building and pushing multi-architecture Docker image..."
+    log_info "Building and pushing AMD64 Docker image..."
     
     # Full ECR repository URI
     ECR_URI="${ECR_REPOSITORY}:${IMAGE_TAG}"
     
-    log_info "Building for architectures: linux/amd64, linux/arm64"
+    log_info "Building for architecture: linux/amd64 only"
     log_info "Image will be tagged as: $ECR_URI"
     
-    # Build and push using Docker Buildx
-    docker buildx build \
-        --platform linux/amd64,linux/arm64 \
-        --tag $ECR_URI \
-        --push \
-        --file Dockerfile \
-        --cache-from type=registry,ref=$ECR_URI \
-        --cache-to type=inline \
-        .
+    # Simple Docker build (no buildx needed)
+    docker build -t $ECR_URI .
     
-    log_success "Multi-architecture image built and pushed successfully!"
+    # Push the image
+    docker push $ECR_URI
+    
+    log_success "AMD64 image built and pushed successfully!"
 }
 
 # Verify the pushed image
 verify_push() {
     log_info "Verifying pushed image..."
     
-    # List the manifest to verify both architectures
-    log_info "Image manifest:"
-    docker buildx imagetools inspect $ECR_URI
+    # Show image details
+    ECR_URI="${ECR_REPOSITORY}:${IMAGE_TAG}"
+    log_info "Image details:"
+    docker manifest inspect $ECR_URI 2>/dev/null || aws ecr describe-images --repository-name verkada/rust-ratelimit --region $REGION
     
     log_success "Image verification complete!"
 }
@@ -146,11 +117,11 @@ main() {
     log_info "Image Name: $IMAGE_NAME"
     log_info "Image Tag: $IMAGE_TAG"
     log_info "Region: $REGION"
+    log_info "Architecture: AMD64 only"
     echo
     
     # Execute all steps
     check_prerequisites
-    setup_builder
     login_to_ecr
     build_and_push
     verify_push
@@ -158,8 +129,8 @@ main() {
     
     echo
     log_success "Build and push process completed successfully!"
-    log_info "Your multi-architecture image is now available in ECR:"
-    log_info "  $ECR_URI"
+    log_info "Your AMD64 image is now available in ECR:"
+    log_info "  ${ECR_REPOSITORY}:${IMAGE_TAG}"
 }
 
 # Handle script interruption
