@@ -39,31 +39,33 @@ async fn main() -> Result<()> {
     info!("Starting Rust Rate Limit Service");
 
     // Initialize components
+    info!("Initializing components:");
     let metrics = Arc::new(Metrics::new()?);
+    info!("Metrics initialized");
     let service = create_service(metrics.clone()).await?;
+    info!("Rate Limit Service created");
     let state = AppState { service, metrics };
 
     // Load initial configuration if provided
     if let Ok(config_path) = std::env::var("CONFIG_PATH") {
         load_and_add_config(&state, &config_path).await?;
     }
+    info!("Configuration loaded successfully");
 
     // Start HTTP server for health checks and metrics
-    let http_addr = std::env::var("HTTP_PORT")
+    let http_addr = std::env::var("HTTP_ADDR")
         .unwrap_or_else(|_| "0.0.0.0:8080".to_string())
         .parse::<SocketAddr>()?;
-    
+    info!("HTTP address: {}", http_addr);
     let http_server = start_http_server(state.clone(), http_addr);
-
+    info!("HTTP server started");
     // Start gRPC server
-    let grpc_addr = std::env::var("GRPC_PORT")
+    let grpc_addr = std::env::var("GRPC_ADDR")
         .unwrap_or_else(|_| "0.0.0.0:8081".to_string())
         .parse::<SocketAddr>()?;
-    
+    info!("gRPC address: {}", grpc_addr);
     let grpc_server = start_grpc_server(state.service.clone(), grpc_addr);
-
-    info!("HTTP server listening on {}", http_addr);
-    info!("gRPC server listening on {}", grpc_addr);
+    info!("gRPC server started");
 
     // Wait for shutdown signal
     tokio::select! {
@@ -150,7 +152,7 @@ async fn start_http_server(state: AppState, addr: SocketAddr) -> Result<()> {
         .route("/metrics", get(metrics_handler))
         .with_state(state);
 
-    let listener = TcpListener::bind(addr).await?;
+    let listener: TcpListener = TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
     
     Ok(())

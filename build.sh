@@ -4,7 +4,8 @@
 set -e
 
 # Configuration
-ECR_REPOSITORY="xxx.dkr.ecr.us-west-2.amazonaws.com/verkada/rust-ratelimit"
+AWS_ACCOUNT_ID="xxx"
+ECR_REPOSITORY="${AWS_ACCOUNT_ID}.dkr.ecr.us-west-2.amazonaws.com/verkada/rust-ratelimit"
 IMAGE_NAME="rust-ratelimit"
 IMAGE_TAG="latest"
 REGION="us-west-2"  # Change this to your AWS region
