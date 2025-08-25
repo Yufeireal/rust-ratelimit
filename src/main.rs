@@ -44,7 +44,7 @@ async fn main() -> Result<()> {
     info!("Metrics initialized");
     let service = create_service(metrics.clone()).await?;
     info!("Rate Limit Service created");
-    let state = AppState { service, metrics };
+    let state: AppState = AppState { service, metrics };
 
     // Load initial configuration if provided
     if let Ok(config_path) = std::env::var("CONFIG_PATH") {
@@ -89,23 +89,53 @@ async fn main() -> Result<()> {
 }
 
 async fn create_service(metrics: Arc<Metrics>) -> Result<Arc<RateLimitService>> {
+    info!("Starting service creation...");
+    
     // Configure Redis
     let redis_url = std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6379".to_string());
+    info!("Using Redis URL: {}", redis_url);
+    
     let redis_config: RedisConfig = RedisConfig {
         url: redis_url,
         ..Default::default()
     };
+    info!("Redis config created with defaults");
 
     // Check if per-second Redis is configured
+    info!("Checking for per-second Redis configuration...");
     let redis_pool = if let Ok(per_second_url) = std::env::var("REDIS_PERSECOND_URL") {
+        info!("Found per-second Redis URL: {}, creating dual pool...", per_second_url);
         let per_second_config = RedisConfig {
             url: per_second_url,
             ..Default::default()
         };
-        RedisClientPool::new_dual(redis_config, per_second_config).await?
+        
+        info!("Creating dual Redis connection pool...");
+        match RedisClientPool::new_dual(redis_config, per_second_config).await {
+            Ok(pool) => {
+                info!("Dual Redis pool created successfully");
+                pool
+            }
+            Err(e) => {
+                warn!("Failed to create dual Redis pool: {}", e);
+                return Err(e.into());
+            }
+        }
     } else {
-        RedisClientPool::new_single(redis_config).await?
+        info!("No per-second Redis configured, creating single pool...");
+        match RedisClientPool::new_single(redis_config).await {
+            Ok(pool) => {
+                info!("Single Redis pool created successfully");
+                pool
+            }
+            Err(e) => {
+                warn!("Failed to create single Redis pool: {}", e);
+                return Err(e.into());
+            }
+        }
     };
+
+    info!("Redis pool creation completed, setting up cache configuration...");
 
     // Create cache
     let local_cache_size = std::env::var("LOCAL_CACHE_SIZE")
@@ -120,6 +150,9 @@ async fn create_service(metrics: Arc<Metrics>) -> Result<Arc<RateLimitService>> 
 
     let cache_key_prefix = std::env::var("CACHE_KEY_PREFIX").unwrap_or_default();
 
+    info!("Creating rate limit cache with size: {}, ratio: {}, prefix: '{}'", 
+           local_cache_size, near_limit_ratio, cache_key_prefix);
+
     let cache = RedisRateLimitCache::new(
         redis_pool,
         local_cache_size,
@@ -127,10 +160,13 @@ async fn create_service(metrics: Arc<Metrics>) -> Result<Arc<RateLimitService>> 
         cache_key_prefix,
     );
 
+    info!("Cache created, setting up limiter and service...");
+
     // Create limiter and service
     let limiter = RateLimiter::new(Box::new(cache));
     let service = Arc::new(RateLimitService::new(limiter, metrics));
 
+    info!("Service creation completed successfully");
     Ok(service)
 }
 

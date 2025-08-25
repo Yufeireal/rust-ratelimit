@@ -55,6 +55,10 @@ moka = { version = "0.12.10", features = ["future"] }
 [build-dependencies]
 tonic-build = "0.10"
 
+[[bin]]
+name = "debug_startup"
+path = "debug_startup.rs"
+
 [dev-dependencies]
 tokio-test = "0.4"
 testcontainers = "0.15"

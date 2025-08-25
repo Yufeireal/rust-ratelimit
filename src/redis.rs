@@ -34,13 +34,70 @@ pub struct RedisClient {
 impl RedisClient {
     /// Create a new Redis client
     pub async fn new(config: RedisConfig) -> Result<Self> {
-        let client = redis::Client::open(config.url.clone())?;
-        let connection = client.get_tokio_connection_manager().await?;
+        use tracing::{info, warn};
+        
+        info!("Creating Redis client for URL: {}", config.url);
+        
+        // Add timeout to client creation
+        let client = redis::Client::open(config.url.clone())
+            .map_err(|e| {
+                warn!("Failed to create Redis client: {}", e);
+                RateLimitError::Redis(e)
+            })?;
+        
+        info!("Redis client created, establishing connection manager...");
+        
+        // Add timeout for connection manager creation
+        let connection_result = tokio::time::timeout(
+            config.connection_timeout.unwrap_or(Duration::from_secs(10)),
+            client.get_connection_manager()
+        ).await;
+        
+        let connection = match connection_result {
+            Ok(Ok(conn)) => {
+                info!("Connection manager established successfully");
+                conn
+            }
+            Ok(Err(e)) => {
+                warn!("Failed to create connection manager: {}", e);
+                return Err(RateLimitError::Redis(e));
+            }
+            Err(_) => {
+                warn!("Timeout while creating connection manager ({}s)", 
+                      config.connection_timeout.unwrap_or(Duration::from_secs(10)).as_secs());
+                return Err(RateLimitError::Service(
+                    "Timeout while creating Redis connection manager".to_string()
+                ));
+            }
+        };
 
-        // Test the connection
+        info!("Testing Redis connection with PING...");
+        
+        // Test the connection with timeout
         let mut conn = connection.clone();
-        redis::cmd("PING").query_async::<_, ()>(&mut conn).await.map_err(RateLimitError::Redis)?;
+        let ping_result = tokio::time::timeout(
+            config.command_timeout.unwrap_or(Duration::from_secs(5)),
+            redis::cmd("PING").query_async::<_, ()>(&mut conn)
+        ).await;
+        
+        match ping_result {
+            Ok(Ok(_)) => {
+                info!("Redis PING successful");
+            }
+            Ok(Err(e)) => {
+                warn!("Redis PING failed: {}", e);
+                return Err(RateLimitError::Redis(e));
+            }
+            Err(_) => {
+                warn!("Redis PING timeout ({}s)", 
+                      config.command_timeout.unwrap_or(Duration::from_secs(5)).as_secs());
+                return Err(RateLimitError::Service(
+                    "Timeout while testing Redis connection".to_string()
+                ));
+            }
+        }
 
+        info!("Redis client initialized successfully");
         Ok(Self { connection, config })
     }
 
@@ -161,7 +218,22 @@ pub struct RedisClientPool {
 impl RedisClientPool {
     /// Create a new Redis client pool with primary client only
     pub async fn new_single(config: RedisConfig) -> Result<Self> {
-        let primary_client = RedisClient::new(config).await?;
+        use tracing::{info, warn};
+        
+        info!("Creating single Redis client pool...");
+        
+        let primary_client = match RedisClient::new(config).await {
+            Ok(client) => {
+                info!("Primary Redis client created successfully");
+                client
+            }
+            Err(e) => {
+                warn!("Failed to create primary Redis client: {}", e);
+                return Err(e);
+            }
+        };
+        
+        info!("Single Redis pool created successfully");
         Ok(Self {
             primary_client,
             per_second_client: None,
@@ -173,9 +245,35 @@ impl RedisClientPool {
         primary_config: RedisConfig,
         per_second_config: RedisConfig,
     ) -> Result<Self> {
-        let primary_client = RedisClient::new(primary_config).await?;
-        let per_second_client = Some(RedisClient::new(per_second_config).await?);
+        use tracing::{info, warn};
         
+        info!("Creating dual Redis client pool...");
+        
+        info!("Creating primary Redis client...");
+        let primary_client = match RedisClient::new(primary_config).await {
+            Ok(client) => {
+                info!("Primary Redis client created successfully");
+                client
+            }
+            Err(e) => {
+                warn!("Failed to create primary Redis client: {}", e);
+                return Err(e);
+            }
+        };
+        
+        info!("Creating per-second Redis client...");
+        let per_second_client = match RedisClient::new(per_second_config).await {
+            Ok(client) => {
+                info!("Per-second Redis client created successfully");
+                Some(client)
+            }
+            Err(e) => {
+                warn!("Failed to create per-second Redis client: {}", e);
+                return Err(e);
+            }
+        };
+        
+        info!("Dual Redis pool created successfully");
         Ok(Self {
             primary_client,
             per_second_client,
