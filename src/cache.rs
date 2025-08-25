@@ -1,7 +1,6 @@
 use async_trait::async_trait;
-use lru::LruCache;
 use moka::{future::Cache, Expiry};
-use std::{collections::HashMap, num::NonZeroUsize, sync::Arc, time::{Duration, Instant}};
+use std::{collections::HashMap, sync::Arc, time::{Duration, Instant}};
 use tokio::sync::Mutex;
 
 use crate::{
